@@ -9,6 +9,14 @@ namespace PinkApocalypse.UI
     {
         private bool isLoading;
 
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
+        private static void ShowTitleScreenWhenPlayingFromGameplayScene()
+        {
+            if (!Application.isEditor || SceneManager.GetActiveScene().name != "SampleScene") return;
+            if (Application.CanStreamedLevelBeLoaded("TitleScreen"))
+                SceneManager.LoadScene("TitleScreen", LoadSceneMode.Single);
+        }
+
         private void Update()
         {
             if (isLoading) return;

@@ -7,6 +7,7 @@ namespace PinkApocalypse.Skateboard
     {
         [SerializeField] private PlayerInputReader input;
         [SerializeField] private Transform boardVisual;
+        [SerializeField] private bool mountedOnStart = true;
         [SerializeField] private Vector3 mountedOffset = new Vector3(0f, 0.1f, 0f);
         [SerializeField] private Vector3 parkedOffset = new Vector3(0f, 0.1f, 0.85f);
         [SerializeField, Min(0f)] private float transitionSpeed = 8f;
@@ -16,6 +17,12 @@ namespace PinkApocalypse.Skateboard
         private void Awake()
         {
             if (input == null) input = GetComponent<PlayerInputReader>();
+            IsMounted = mountedOnStart;
+            if (boardVisual != null)
+            {
+                boardVisual.localPosition = IsMounted ? mountedOffset : parkedOffset;
+                boardVisual.localRotation = IsMounted ? Quaternion.identity : Quaternion.Euler(0f, 15f, 0f);
+            }
         }
 
         private void Update()

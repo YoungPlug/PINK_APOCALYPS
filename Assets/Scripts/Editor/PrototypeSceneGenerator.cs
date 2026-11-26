@@ -1,6 +1,8 @@
 using System.IO;
 using System.Linq;
+using System.Collections.Generic;
 using PinkApocalypse.CameraSystem;
+using PinkApocalypse.Managers;
 using PinkApocalypse.Player;
 using PinkApocalypse.Skateboard;
 using UnityEditor;
@@ -20,6 +22,7 @@ namespace PinkApocalypse.EditorTools
         private const string CharacterModelPath = "Assets/Art/Characters/MAYBEBABY_Rigged.fbx";
         private const string CharacterControllerPath = "Assets/Art/Characters/MAYBEBABY_Locomotion.controller";
         private const string EnvironmentModelPath = "Assets/Art/Environment/cartoon_city_free.fbx";
+        private const string EnvironmentTextureFolder = "Assets/Art/Environment/Textures";
 
         [MenuItem("Pink Apocalypse/Generate Sprint 01 Prototype")]
         public static void Generate()
@@ -92,10 +95,14 @@ namespace PinkApocalypse.EditorTools
             InputActionAsset actions = AssetDatabase.LoadAssetAtPath<InputActionAsset>(InputPath);
             if (actions == null) Debug.LogError($"Could not load InputActionAsset at {InputPath}.");
             SetPrivateReference(input, "actionsAsset", actions);
+            CreateSoundtrack(input);
 
             EditorSceneManager.SaveScene(scene, ScenePath);
             AssetDatabase.SaveAssets();
-            EditorBuildSettings.scenes = new[] { new EditorBuildSettingsScene(ScenePath, true) };
+            List<EditorBuildSettingsScene> buildScenes = EditorBuildSettings.scenes.ToList();
+            if (!buildScenes.Any(buildScene => buildScene.path == ScenePath))
+                buildScenes.Add(new EditorBuildSettingsScene(ScenePath, true));
+            EditorBuildSettings.scenes = buildScenes.ToArray();
             Debug.Log($"Sprint 01 prototype scene generated: {ScenePath}");
         }
 
@@ -113,12 +120,143 @@ namespace PinkApocalypse.EditorTools
             environment.name = "Cartoon City Map";
             environment.transform.SetPositionAndRotation(Vector3.zero, Quaternion.identity);
 
+            Dictionary<Material, Material> cityMaterials = CreateCityMaterials();
+
             foreach (MeshFilter meshFilter in environment.GetComponentsInChildren<MeshFilter>(true))
             {
+                MeshRenderer renderer = meshFilter.GetComponent<MeshRenderer>();
+                if (renderer != null && cityMaterials.Count > 0)
+                {
+                    Material[] sourceMaterials = renderer.sharedMaterials;
+                    for (int i = 0; i < sourceMaterials.Length; i++)
+                        if (sourceMaterials[i] != null && cityMaterials.TryGetValue(sourceMaterials[i], out Material cityMaterial))
+                            sourceMaterials[i] = cityMaterial;
+                    renderer.sharedMaterials = sourceMaterials;
+                }
+
                 if (meshFilter.sharedMesh == null || meshFilter.GetComponent<Collider>() != null) continue;
                 var meshCollider = meshFilter.gameObject.AddComponent<MeshCollider>();
                 meshCollider.sharedMesh = meshFilter.sharedMesh;
             }
+        }
+
+        private static Dictionary<Material, Material> CreateCityMaterials()
+        {
+            const string folder = "Assets/Art/Environment/Materials";
+            if (!AssetDatabase.IsValidFolder(folder)) AssetDatabase.CreateFolder("Assets/Art/Environment", "Materials");
+
+            Shader urpShader = Shader.Find("Universal Render Pipeline/Lit");
+            if (urpShader == null) urpShader = Shader.Find("Standard");
+
+            Material[] sourceMaterials = AssetDatabase.LoadAllAssetsAtPath(EnvironmentModelPath)
+                .OfType<Material>().OrderBy(material => material.name, System.StringComparer.OrdinalIgnoreCase).ToArray();
+            var replacements = new Dictionary<Material, Material>();
+
+            for (int i = 0; i < sourceMaterials.Length; i++)
+            {
+                Material source = sourceMaterials[i];
+                string safeName = string.Join("_", source.name.Split(Path.GetInvalidFileNameChars()));
+                string path = $"{folder}/City_{i:000}_{safeName}.mat";
+                Material cityMaterial = AssetDatabase.LoadAssetAtPath<Material>(path);
+                if (cityMaterial == null)
+                {
+                    cityMaterial = new Material(urpShader) { name = $"City_{i:000}_{safeName}" };
+                    AssetDatabase.CreateAsset(cityMaterial, path);
+                }
+
+                Color color = source.HasProperty("_BaseColor") ? source.GetColor("_BaseColor")
+                    : source.HasProperty("_Color") ? source.GetColor("_Color") : Color.white;
+                if (cityMaterial.HasProperty("_BaseColor")) cityMaterial.SetColor("_BaseColor", color);
+                if (cityMaterial.HasProperty("_Color")) cityMaterial.SetColor("_Color", color);
+
+                Texture albedo = source.HasProperty("_BaseMap") ? source.GetTexture("_BaseMap")
+                    : source.HasProperty("_MainTex") ? source.GetTexture("_MainTex") : null;
+                string cityTexturePath = GetCityAlbedoPath(source.name);
+                if (!string.IsNullOrEmpty(cityTexturePath))
+                    albedo = AssetDatabase.LoadAssetAtPath<Texture2D>(cityTexturePath);
+                if (cityMaterial.HasProperty("_BaseMap")) cityMaterial.SetTexture("_BaseMap", albedo);
+                if (cityMaterial.HasProperty("_MainTex")) cityMaterial.SetTexture("_MainTex", albedo);
+
+                Texture normal = source.HasProperty("_BumpMap") ? source.GetTexture("_BumpMap") : null;
+                if (source.name == "Tile_1")
+                {
+                    const string normalPath = EnvironmentTextureFolder + "/Tiles_2_Normal.png";
+                    var normalImporter = AssetImporter.GetAtPath(normalPath) as TextureImporter;
+                    if (normalImporter != null && normalImporter.textureType != TextureImporterType.NormalMap)
+                    {
+                        normalImporter.textureType = TextureImporterType.NormalMap;
+                        normalImporter.SaveAndReimport();
+                    }
+                    normal = AssetDatabase.LoadAssetAtPath<Texture2D>(normalPath);
+                }
+                if (normal != null && cityMaterial.HasProperty("_BumpMap")) cityMaterial.SetTexture("_BumpMap", normal);
+                if (source.HasProperty("_Metallic") && cityMaterial.HasProperty("_Metallic"))
+                    cityMaterial.SetFloat("_Metallic", source.GetFloat("_Metallic"));
+                if (source.HasProperty("_Glossiness") && cityMaterial.HasProperty("_Smoothness"))
+                    cityMaterial.SetFloat("_Smoothness", source.GetFloat("_Glossiness"));
+
+                EditorUtility.SetDirty(cityMaterial);
+                replacements[source] = cityMaterial;
+                Debug.Log($"City material '{source.name}': shader={source.shader?.name}, color={color}, albedo={(albedo != null ? albedo.name : "none")}");
+            }
+
+            AssetDatabase.SaveAssets();
+            return replacements;
+        }
+
+        private static string GetCityAlbedoPath(string materialName)
+        {
+            string textureName = materialName switch
+            {
+                "Billboard" => "Banners.png",
+                "Car_Color" => "Texture_Atlas_03.png",
+                "Color" => "Texture_Atlas_01.png",
+                "Color_Glossy" => "Texture_Atlas_02.png",
+                "Graffiti" => "Graffiti.png",
+                "Road_Signs" => "Road_Signs.png",
+                "Roads" => "Roads.png",
+                "scrolling text" => "Scrolling_Text.png",
+                "Tile_1" => "Tiles_2.png",
+                _ => null
+            };
+            return string.IsNullOrEmpty(textureName) ? null : $"{EnvironmentTextureFolder}/{textureName}";
+        }
+
+        private static void CreateSoundtrack(PlayerInputReader input)
+        {
+            const string soundtrackFolder = "Assets/Audio/Soundtrack";
+            string[] trackPaths = AssetDatabase.FindAssets("t:AudioClip", new[] { soundtrackFolder })
+                .Select(AssetDatabase.GUIDToAssetPath)
+                .OrderBy(path => Path.GetFileNameWithoutExtension(path), System.StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+            AudioClip[] tracks = trackPaths.Select(AssetDatabase.LoadAssetAtPath<AudioClip>)
+                .Where(clip => clip != null).ToArray();
+            if (tracks.Length == 0)
+            {
+                Debug.LogWarning($"No soundtrack clips found in {soundtrackFolder}.");
+                return;
+            }
+
+            GameObject soundtrack = new GameObject("Soundtrack");
+            AudioSource source = soundtrack.AddComponent<AudioSource>();
+            source.playOnAwake = false;
+            source.loop = false;
+            source.spatialBlend = 0f;
+            SoundtrackPlayer player = soundtrack.AddComponent<SoundtrackPlayer>();
+            SetPrivateReference(player, "audioSource", source);
+            SetPrivateReference(player, "input", input);
+            SetPrivateAudioClips(player, "tracks", tracks);
+            Debug.Log($"Soundtrack added with {tracks.Length} tracks.");
+        }
+
+        private static void SetPrivateAudioClips(Object target, string fieldName, AudioClip[] clips)
+        {
+            SerializedObject serialized = new SerializedObject(target);
+            SerializedProperty list = serialized.FindProperty(fieldName);
+            list.arraySize = clips.Length;
+            for (int index = 0; index < clips.Length; index++)
+                list.GetArrayElementAtIndex(index).objectReferenceValue = clips[index];
+            serialized.ApplyModifiedPropertiesWithoutUndo();
         }
 
         private static GameObject CreateCharacterModel(Transform playerRoot)
