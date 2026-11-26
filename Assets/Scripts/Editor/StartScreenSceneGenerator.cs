@@ -33,6 +33,17 @@ namespace PinkApocalypse.EditorTools
             scaler.referenceResolution = new Vector2(1920f, 1080f);
             scaler.matchWidthOrHeight = 0.5f;
 
+            GameObject backgroundObject = new GameObject("Opaque Background", typeof(RectTransform), typeof(Image));
+            backgroundObject.transform.SetParent(canvasObject.transform, false);
+            RectTransform backgroundRect = backgroundObject.GetComponent<RectTransform>();
+            backgroundRect.anchorMin = Vector2.zero;
+            backgroundRect.anchorMax = Vector2.one;
+            backgroundRect.offsetMin = Vector2.zero;
+            backgroundRect.offsetMax = Vector2.zero;
+            Image backgroundImage = backgroundObject.GetComponent<Image>();
+            backgroundImage.color = Color.black;
+            backgroundImage.raycastTarget = false;
+
             GameObject logoObject = new GameObject("Pink Apocalypse Logo", typeof(RectTransform), typeof(RawImage), typeof(AspectRatioFitter));
             logoObject.transform.SetParent(canvasObject.transform, false);
             RectTransform logoRect = logoObject.GetComponent<RectTransform>();
@@ -83,7 +94,7 @@ namespace PinkApocalypse.EditorTools
                 new EditorBuildSettingsScene(ScenePath, true),
                 new EditorBuildSettingsScene(GameplayScenePath, true)
             };
-            Debug.Log($"Title screen generated: {ScenePath}. Any keyboard or gamepad button opens {GameplayScenePath}.");
+            Debug.Log($"Title screen generated: {ScenePath}. Any keyboard or gamepad button opens the intro cutscene before {GameplayScenePath}.");
         }
     }
 }

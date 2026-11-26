@@ -16,12 +16,23 @@ namespace PinkApocalypse.Player
         {
             if (motor == null) motor = GetComponent<PlayerMotor>();
             if (animator == null && visualRoot != null) animator = visualRoot.GetComponentInChildren<Animator>();
+            if (animator == null || visualRoot == null) return;
+
+            CharacterArmAnimationBlocker armBlocker = GetComponent<CharacterArmAnimationBlocker>();
+            if (armBlocker == null) armBlocker = gameObject.AddComponent<CharacterArmAnimationBlocker>();
+            armBlocker.Initialize(animator);
         }
 
         private void Update()
         {
             if (animator == null || motor == null) return;
-            animator.SetFloat(SpeedParameter, motor.CurrentSpeed, speedDampTime, Time.deltaTime);
+
+            // Keep the locomotion controller in Idle on the skateboard and in the air.
+            float animationSpeed = motor.IsMountedOnSkateboard || !motor.IsGrounded
+                ? 0f
+                : motor.CurrentSpeed;
+            animator.SetFloat(SpeedParameter, animationSpeed, speedDampTime, Time.deltaTime);
         }
+
     }
 }

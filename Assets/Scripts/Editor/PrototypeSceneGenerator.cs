@@ -78,6 +78,8 @@ namespace PinkApocalypse.EditorTools
             SetPrivateReference(board, "boardVisual", boardVisual);
             SetPrivateReference(motor, "input", input);
             SetPrivateReference(motor, "skateboard", board);
+            Material characterMaterial = AssetDatabase.LoadAssetAtPath<Material>("Assets/Art/Characters/Materials/PA_Character_Texture.mat");
+            SetPrivateReference(motor, "characterMaterial", characterMaterial);
             SetLayerRecursively(player, 2);
 
             GameObject cameraObject = new GameObject("Main Camera", typeof(Camera), typeof(AudioListener), typeof(ThirdPersonCamera));

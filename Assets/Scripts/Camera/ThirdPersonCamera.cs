@@ -9,8 +9,8 @@ namespace PinkApocalypse.CameraSystem
     {
         [SerializeField] private Transform target;
         [SerializeField] private PlayerInputReader input;
-        [SerializeField, Min(0f)] private float distance = 5.5f;
-        [SerializeField, Min(0f)] private float height = 1.55f;
+        [SerializeField, Min(0f)] private float distance = 1.5f;
+        [SerializeField, Min(0f)] private float height = 0.95f;
         [SerializeField, Min(0f)] private float sensitivity = 0.12f;
         [SerializeField, Min(0f)] private float gamepadSensitivity = 180f;
         [SerializeField, Min(0f)] private float positionSmoothTime = 0.08f;
@@ -56,6 +56,25 @@ namespace PinkApocalypse.CameraSystem
 
             Quaternion orbit = Quaternion.Euler(pitch, yaw, 0f);
             Vector3 focus = target.position + Vector3.up * height;
+            Renderer[] targetRenderers = target.GetComponentsInChildren<Renderer>();
+            bool hasVisualBounds = false;
+            Bounds visualBounds = default;
+            foreach (Renderer targetRenderer in targetRenderers)
+            {
+                if (!targetRenderer.enabled) continue;
+                if (!hasVisualBounds)
+                {
+                    visualBounds = targetRenderer.bounds;
+                    hasVisualBounds = true;
+                }
+                else visualBounds.Encapsulate(targetRenderer.bounds);
+            }
+
+            if (hasVisualBounds)
+            {
+                focus.x = visualBounds.center.x;
+                focus.z = visualBounds.center.z;
+            }
             Vector3 desiredPosition = focus - orbit * Vector3.forward * distance;
             Vector3 toCamera = desiredPosition - focus;
             float allowedDistance = distance;

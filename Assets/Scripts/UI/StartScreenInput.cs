@@ -2,6 +2,7 @@ using UnityEngine;
 using UnityEngine.InputSystem;
 using UnityEngine.InputSystem.Controls;
 using UnityEngine.SceneManagement;
+using UnityEngine.UI;
 
 namespace PinkApocalypse.UI
 {
@@ -9,12 +10,22 @@ namespace PinkApocalypse.UI
     {
         private bool isLoading;
 
-        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
-        private static void ShowTitleScreenWhenPlayingFromGameplayScene()
+        private void Awake()
         {
-            if (!Application.isEditor || SceneManager.GetActiveScene().name != "SampleScene") return;
-            if (Application.CanStreamedLevelBeLoaded("TitleScreen"))
-                SceneManager.LoadScene("TitleScreen", LoadSceneMode.Single);
+            Canvas canvas = GetComponentInParent<Canvas>();
+            if (canvas == null || canvas.transform.Find("Opaque Background") != null) return;
+
+            GameObject background = new GameObject("Opaque Background", typeof(RectTransform), typeof(Image));
+            background.transform.SetParent(canvas.transform, false);
+            RectTransform rect = background.GetComponent<RectTransform>();
+            rect.anchorMin = Vector2.zero;
+            rect.anchorMax = Vector2.one;
+            rect.offsetMin = Vector2.zero;
+            rect.offsetMax = Vector2.zero;
+            Image image = background.GetComponent<Image>();
+            image.color = Color.black;
+            image.raycastTarget = false;
+            background.transform.SetAsFirstSibling();
         }
 
         private void Update()
@@ -46,6 +57,18 @@ namespace PinkApocalypse.UI
         private void ContinueToGame()
         {
             isLoading = true;
+            Canvas canvas = GetComponentInParent<Canvas>();
+            if (canvas != null)
+            {
+                Text prompt = canvas.GetComponentInChildren<Text>();
+                if (prompt != null) prompt.text = "ЗАГРУЗКА...";
+
+                canvas.sortingOrder = short.MaxValue;
+                GameObject canvasRoot = canvas.gameObject;
+                DontDestroyOnLoad(canvasRoot);
+                canvasRoot.AddComponent<StartScreenTransitionOverlay>();
+            }
+
             SceneManager.LoadScene("SampleScene");
         }
     }

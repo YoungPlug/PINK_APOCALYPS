@@ -9,6 +9,7 @@ namespace PinkApocalypse.Player
         [SerializeField] private PlayerInputReader input;
         [SerializeField] private Transform cameraTransform;
         [SerializeField] private Skateboard.SkateboardController skateboard;
+        [SerializeField] private Material characterMaterial;
 
         [Header("Walking")]
         [SerializeField, Min(0f)] private float walkSpeed = 4f;
@@ -19,7 +20,8 @@ namespace PinkApocalypse.Player
         [SerializeField, Min(0f)] private float skateMaxSpeed = 11f;
         [SerializeField, Min(0f)] private float skateAcceleration = 8f;
         [SerializeField, Min(0f)] private float skateBraking = 15f;
-        [SerializeField, Min(0f)] private float skateSteeringDegrees = 115f;
+        [SerializeField, Min(0f)] private float skateCoastingDeceleration = 7.5f;
+        [SerializeField, Min(0f)] private float skateJumpHeight = 1.8f;
 
         [Header("Jump and gravity")]
         [SerializeField, Min(0f)] private float jumpHeight = 1.35f;
@@ -32,11 +34,39 @@ namespace PinkApocalypse.Player
         private float verticalVelocity;
 
         public float CurrentSpeed => horizontalVelocity.magnitude;
+        public bool IsMountedOnSkateboard => skateboard != null && skateboard.IsMounted;
+        public bool IsGrounded => characterController != null && characterController.isGrounded;
 
         private void Awake()
         {
             characterController = GetComponent<CharacterController>();
             if (input == null) input = GetComponent<PlayerInputReader>();
+            ApplyCharacterMaterial();
+            PinkApocalypse.World.CitySky.Apply();
+
+            GameObject city = GameObject.Find("cartoon_city_free");
+            if (city == null) city = GameObject.Find("Cartoon City Map");
+            PinkApocalypse.World.CityBoundaryWalls.CreateAround(city);
+            PinkApocalypse.World.CityStreetLights.CreateAround(city);
+            PinkApocalypse.World.CityTraffic.Configure(city);
+        }
+
+
+        private void ApplyCharacterMaterial()
+        {
+            if (characterMaterial == null) return;
+
+            Transform characterRoot = transform.Find("Main Character Model");
+            if (characterRoot == null) characterRoot = transform.Find("Character Visual");
+            if (characterRoot == null) return;
+
+            foreach (Renderer characterRenderer in characterRoot.GetComponentsInChildren<Renderer>(true))
+            {
+                Material[] materials = characterRenderer.sharedMaterials;
+                if (materials.Length == 0) continue;
+                for (int i = 0; i < materials.Length; i++) materials[i] = characterMaterial;
+                characterRenderer.sharedMaterials = materials;
+            }
         }
 
         private void Update()
@@ -57,15 +87,31 @@ namespace PinkApocalypse.Player
             else
                 MoveOnFoot(moveInput, desiredDirection);
 
-            if (characterController.isGrounded)
+            bool mountedGrounded = mounted && verticalVelocity <= 0f
+                && transform.position.y <= skateboard.MountedRestHeight + 0.02f;
+            if (characterController.isGrounded || mountedGrounded)
             {
-                if (verticalVelocity < 0f) verticalVelocity = -groundedStickForce;
-                if (input.JumpPressed) verticalVelocity = Mathf.Sqrt(jumpHeight * -2f * gravity);
+                if (verticalVelocity < 0f) verticalVelocity = mounted ? 0f : -groundedStickForce;
+                bool performKickflip = mounted && input.KickflipPressed;
+                if (performKickflip || input.JumpPressed)
+                {
+                    float activeJumpHeight = mounted ? skateJumpHeight : jumpHeight;
+                    verticalVelocity = Mathf.Sqrt(activeJumpHeight * -2f * gravity);
+                    if (performKickflip) skateboard.StartKickflip();
+                }
             }
             verticalVelocity += gravity * Time.deltaTime;
 
             Vector3 frameVelocity = horizontalVelocity + Vector3.up * verticalVelocity;
             characterController.Move(frameVelocity * Time.deltaTime);
+
+            if (mounted && verticalVelocity < 0f && transform.position.y <= skateboard.MountedRestHeight)
+            {
+                Vector3 groundedPosition = transform.position;
+                groundedPosition.y = skateboard.MountedRestHeight;
+                transform.position = groundedPosition;
+                verticalVelocity = 0f;
+            }
         }
 
         private void MoveOnFoot(Vector2 inputVector, Vector3 direction)
@@ -85,19 +131,10 @@ namespace PinkApocalypse.Player
             else if (throttle < 0f)
                 planarVelocity = Vector3.MoveTowards(planarVelocity, Vector3.zero, skateBraking * -throttle * Time.deltaTime);
             else
-                planarVelocity = Vector3.MoveTowards(planarVelocity, Vector3.zero, skateBraking * 0.18f * Time.deltaTime);
-
-            float steer = inputVector.x;
-            if (planarVelocity.sqrMagnitude > 0.04f && Mathf.Abs(steer) > 0.01f)
-            {
-                float directionSign = Vector3.Dot(planarVelocity.normalized, transform.forward) < 0f ? -1f : 1f;
-                transform.Rotate(Vector3.up, steer * skateSteeringDegrees * directionSign * Time.deltaTime, Space.World);
-                planarVelocity = Vector3.RotateTowards(planarVelocity, transform.forward * planarVelocity.magnitude,
-                    Mathf.Abs(steer) * skateSteeringDegrees * Mathf.Deg2Rad * Time.deltaTime, 0f);
-            }
+                planarVelocity = Vector3.MoveTowards(planarVelocity, Vector3.zero, skateCoastingDeceleration * Time.deltaTime);
 
             horizontalVelocity = planarVelocity;
-            if (planarVelocity.sqrMagnitude < 0.04f) FaceDirection(direction);
+            FaceDirection(direction);
         }
 
         private void FaceDirection(Vector3 direction)

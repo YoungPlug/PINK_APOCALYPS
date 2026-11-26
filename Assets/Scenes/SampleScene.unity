@@ -2608,10 +2608,8 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::PinkApocalypse.Skateboard.SkateboardController
   input: {fileID: 575303187}
   boardVisual: {fileID: 1658849596}
-  mountedOnStart: 1
+  mountedOnStart: 0
   mountedOffset: {x: 0, y: 0.1, z: 0}
-  parkedOffset: {x: 0, y: 0.1, z: 0.85}
-  transitionSpeed: 8
 --- !u!114 &575303191
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -2627,13 +2625,15 @@ MonoBehaviour:
   input: {fileID: 575303187}
   cameraTransform: {fileID: 915457630}
   skateboard: {fileID: 575303190}
+  characterMaterial: {fileID: 2100000, guid: cb151d6a6859450e8967742a71d50589, type: 2}
   walkSpeed: 4
   runSpeed: 6.5
   groundAcceleration: 24
   skateMaxSpeed: 11
   skateAcceleration: 8
   skateBraking: 15
-  skateSteeringDegrees: 115
+  skateCoastingDeceleration: 7.5
+  skateJumpHeight: 1.8
   jumpHeight: 1.35
   gravity: -22
   groundedStickForce: 2
@@ -10997,8 +10997,8 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::PinkApocalypse.CameraSystem.ThirdPersonCamera
   target: {fileID: 575303188}
   input: {fileID: 575303187}
-  distance: 5.5
-  height: 1.55
+  distance: 1.5
+  height: 0.95
   sensitivity: 0.12
   gamepadSensitivity: 180
   positionSmoothTime: 0.08

@@ -51,7 +51,7 @@ namespace PinkApocalypse.EditorTools
 
             EditorSceneManager.SaveScene(scene, ScenePath);
             AssetDatabase.SaveAssets();
-            Debug.Log($"Soundtrack configured with {clips.Length} tracks. Playlist order is alphabetic by filename.");
+            Debug.Log($"Soundtrack configured with {clips.Length} tracks. Runtime playback shuffles the playlist without repeats until each track has played.");
         }
 
         private static void ConfigureAudioImport(string path)

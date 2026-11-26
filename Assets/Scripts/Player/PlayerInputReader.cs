@@ -11,6 +11,7 @@ namespace PinkApocalypse.Player
         private InputActionMap playerMap;
         private InputAction moveAction;
         private InputAction lookAction;
+        private InputAction attackAction;
         private InputAction jumpAction;
         private InputAction sprintAction;
         private InputAction interactAction;
@@ -20,6 +21,7 @@ namespace PinkApocalypse.Player
         public Vector2 Move => moveAction != null ? moveAction.ReadValue<Vector2>() : Vector2.zero;
         public Vector2 Look => lookAction != null ? lookAction.ReadValue<Vector2>() : Vector2.zero;
         public Vector2 GamepadLook => Gamepad.current != null ? Gamepad.current.rightStick.ReadValue() : Vector2.zero;
+        public bool KickflipPressed => attackAction != null && attackAction.WasPressedThisFrame();
         public bool JumpPressed => jumpAction != null && jumpAction.WasPressedThisFrame();
         public bool SprintHeld => sprintAction != null && sprintAction.IsPressed();
         public bool InteractPressed => interactAction != null && interactAction.WasPressedThisFrame();
@@ -43,6 +45,7 @@ namespace PinkApocalypse.Player
 
             moveAction = playerMap.FindAction("Move", false);
             lookAction = playerMap.FindAction("Look", false);
+            attackAction = playerMap.FindAction("Attack", false);
             jumpAction = playerMap.FindAction("Jump", false);
             sprintAction = playerMap.FindAction("Sprint", false);
             interactAction = playerMap.FindAction("Interact", false);
