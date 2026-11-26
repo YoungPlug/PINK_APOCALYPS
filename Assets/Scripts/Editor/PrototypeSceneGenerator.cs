@@ -1,8 +1,10 @@
 using System.IO;
+using System.Linq;
 using PinkApocalypse.CameraSystem;
 using PinkApocalypse.Player;
 using PinkApocalypse.Skateboard;
 using UnityEditor;
+using UnityEditor.Animations;
 using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.InputSystem;
@@ -15,6 +17,9 @@ namespace PinkApocalypse.EditorTools
         private const string ScenePath = "Assets/Scenes/SampleScene.unity";
         private const string InputPath = "Assets/InputSystem_Actions.inputactions";
         private const string MaterialFolder = "Assets/Materials";
+        private const string CharacterModelPath = "Assets/Art/Characters/MAYBEBABY_Rigged.fbx";
+        private const string CharacterControllerPath = "Assets/Art/Characters/MAYBEBABY_Locomotion.controller";
+        private const string EnvironmentModelPath = "Assets/Art/Environment/cartoon_city_free.fbx";
 
         [MenuItem("Pink Apocalypse/Generate Sprint 01 Prototype")]
         public static void Generate()
@@ -33,12 +38,7 @@ namespace PinkApocalypse.EditorTools
             RenderSettings.fogColor = new Color(0.22f, 0.17f, 0.24f);
             RenderSettings.fogDensity = 0.012f;
 
-            CreateBlock("Ground", new Vector3(0f, -0.1f, 0f), new Vector3(24f, 0.2f, 24f), dark);
-            CreateBlock("Pink test lane", new Vector3(0f, 0.015f, 0f), new Vector3(3.5f, 0.025f, 18f), pink, false);
-            CreateBlock("Low box left", new Vector3(-4f, 0.55f, 3f), new Vector3(1.5f, 1.1f, 1.5f), lightPink);
-            CreateBlock("Low box right", new Vector3(4f, 0.4f, 6f), new Vector3(1.5f, 0.8f, 1.5f), white);
-            CreateBlock("Test barrier", new Vector3(0f, 0.55f, 8f), new Vector3(5f, 1.1f, 0.35f), pink);
-            CreateBlock("Ramp", new Vector3(-5f, 0.35f, -2f), new Vector3(3f, 0.7f, 4f), lightPink).transform.rotation = Quaternion.Euler(-10f, 0f, 0f);
+            CreateEnvironment();
 
             var lightObject = new GameObject("Directional Light");
             var light = lightObject.AddComponent<Light>();
@@ -59,7 +59,17 @@ namespace PinkApocalypse.EditorTools
             var input = player.AddComponent<PlayerInputReader>();
             var motor = player.AddComponent<PlayerMotor>();
             var board = player.AddComponent<SkateboardController>();
-            CreateCharacterVisual(player.transform, skin, dark, lightPink, pink);
+            GameObject characterModel = CreateCharacterModel(player.transform);
+            if (characterModel == null)
+            {
+                characterModel = new GameObject("Character Visual");
+                characterModel.transform.SetParent(player.transform, false);
+                CreateCharacterVisual(characterModel.transform, skin, dark, lightPink, pink);
+            }
+            var visualAnimator = player.AddComponent<CharacterMovementAnimation>();
+            SetPrivateReference(visualAnimator, "visualRoot", characterModel.transform);
+            SetPrivateReference(visualAnimator, "motor", motor);
+            SetPrivateReference(visualAnimator, "animator", characterModel.GetComponent<Animator>());
             Transform boardVisual = CreateBoardVisual(player.transform, pink, dark, white);
             SetPrivateReference(board, "input", input);
             SetPrivateReference(board, "boardVisual", boardVisual);
@@ -87,6 +97,134 @@ namespace PinkApocalypse.EditorTools
             AssetDatabase.SaveAssets();
             EditorBuildSettings.scenes = new[] { new EditorBuildSettingsScene(ScenePath, true) };
             Debug.Log($"Sprint 01 prototype scene generated: {ScenePath}");
+        }
+
+        private static void CreateEnvironment()
+        {
+            GameObject environmentAsset = AssetDatabase.LoadAssetAtPath<GameObject>(EnvironmentModelPath);
+            if (environmentAsset == null)
+            {
+                Debug.LogError($"Could not load city map at {EnvironmentModelPath}.");
+                return;
+            }
+
+            GameObject environment = (GameObject)PrefabUtility.InstantiatePrefab(environmentAsset);
+            if (environment == null) environment = Object.Instantiate(environmentAsset);
+            environment.name = "Cartoon City Map";
+            environment.transform.SetPositionAndRotation(Vector3.zero, Quaternion.identity);
+
+            foreach (MeshFilter meshFilter in environment.GetComponentsInChildren<MeshFilter>(true))
+            {
+                if (meshFilter.sharedMesh == null || meshFilter.GetComponent<Collider>() != null) continue;
+                var meshCollider = meshFilter.gameObject.AddComponent<MeshCollider>();
+                meshCollider.sharedMesh = meshFilter.sharedMesh;
+            }
+        }
+
+        private static GameObject CreateCharacterModel(Transform playerRoot)
+        {
+            var modelImporter = AssetImporter.GetAtPath(CharacterModelPath) as ModelImporter;
+            if (modelImporter != null)
+            {
+                bool needsReimport = modelImporter.animationType != ModelImporterAnimationType.Generic || !modelImporter.importAnimation;
+                modelImporter.animationType = ModelImporterAnimationType.Generic;
+                modelImporter.importAnimation = true;
+
+                ModelImporterClipAnimation[] clips = modelImporter.clipAnimations;
+                if (clips.Length == 0) clips = modelImporter.defaultClipAnimations;
+                foreach (ModelImporterClipAnimation clip in clips)
+                {
+                    bool locomotionClip = clip.name.IndexOf("Idle", System.StringComparison.OrdinalIgnoreCase) >= 0
+                        || clip.name.IndexOf("Walk", System.StringComparison.OrdinalIgnoreCase) >= 0
+                        || clip.name.IndexOf("Run", System.StringComparison.OrdinalIgnoreCase) >= 0;
+                    if (!locomotionClip) continue;
+                    if (!clip.loopTime || !clip.loopPose) needsReimport = true;
+                    clip.loopTime = true;
+                    clip.loopPose = true;
+                }
+
+                if (clips.Length > 0) modelImporter.clipAnimations = clips;
+                if (needsReimport) modelImporter.SaveAndReimport();
+            }
+
+            GameObject modelAsset = AssetDatabase.LoadAssetAtPath<GameObject>(CharacterModelPath);
+            if (modelAsset == null) return null;
+
+            GameObject model = (GameObject)PrefabUtility.InstantiatePrefab(modelAsset);
+            if (model == null) model = Object.Instantiate(modelAsset);
+            model.name = "Main Character Model";
+            model.transform.SetParent(playerRoot, false);
+
+            Animator animator = model.GetComponent<Animator>();
+            if (animator == null) animator = model.AddComponent<Animator>();
+            animator.runtimeAnimatorController = GetOrCreateCharacterController();
+            animator.applyRootMotion = false;
+
+            Renderer[] renderers = model.GetComponentsInChildren<Renderer>(true);
+            if (renderers.Length > 0)
+            {
+                Bounds bounds = renderers[0].bounds;
+                for (int i = 1; i < renderers.Length; i++) bounds.Encapsulate(renderers[i].bounds);
+                if (bounds.size.y > 0.001f)
+                {
+                    float scale = 1.72f / bounds.size.y;
+                    model.transform.localScale = Vector3.one * scale;
+                    model.transform.localPosition = Vector3.up * (-bounds.min.y * scale + 0.04f);
+                }
+            }
+
+            SetLayerRecursively(model, 2);
+            return model;
+        }
+
+        private static RuntimeAnimatorController GetOrCreateCharacterController()
+        {
+            AnimatorController controller = AssetDatabase.LoadAssetAtPath<AnimatorController>(CharacterControllerPath);
+            if (controller != null) return controller;
+
+            AnimationClip[] clips = AssetDatabase.LoadAllAssetsAtPath(CharacterModelPath).OfType<AnimationClip>()
+                .Where(clip => !clip.name.StartsWith("__preview__", System.StringComparison.OrdinalIgnoreCase)).ToArray();
+            AnimationClip idleClip = FindClip(clips, "Idle");
+            AnimationClip walkClip = FindClip(clips, "Walk");
+            AnimationClip runClip = FindClip(clips, "Run");
+            if (idleClip == null || walkClip == null || runClip == null)
+            {
+                Debug.LogError($"Rigged FBX clips missing. Imported clips: {string.Join(", ", clips.Select(c => c.name))}");
+                return null;
+            }
+
+            controller = AnimatorController.CreateAnimatorControllerAtPath(CharacterControllerPath);
+            controller.AddParameter("Speed", AnimatorControllerParameterType.Float);
+            AnimatorStateMachine machine = controller.layers[0].stateMachine;
+            AnimatorState idle = machine.AddState("Idle");
+            AnimatorState walk = machine.AddState("Walk");
+            AnimatorState run = machine.AddState("Run");
+            machine.defaultState = idle;
+            idle.motion = idleClip;
+            walk.motion = walkClip;
+            run.motion = runClip;
+
+            AddSpeedTransition(idle, walk, AnimatorConditionMode.Greater, 0.12f);
+            AddSpeedTransition(walk, idle, AnimatorConditionMode.Less, 0.08f);
+            AddSpeedTransition(walk, run, AnimatorConditionMode.Greater, 4.8f);
+            AddSpeedTransition(run, idle, AnimatorConditionMode.Less, 0.08f);
+            AddSpeedTransition(run, walk, AnimatorConditionMode.Less, 4.8f);
+            AssetDatabase.SaveAssets();
+            return controller;
+        }
+
+        private static AnimationClip FindClip(AnimationClip[] clips, string name)
+        {
+            return clips.FirstOrDefault(clip => string.Equals(clip.name, name, System.StringComparison.OrdinalIgnoreCase))
+                ?? clips.FirstOrDefault(clip => clip.name.IndexOf(name, System.StringComparison.OrdinalIgnoreCase) >= 0);
+        }
+
+        private static void AddSpeedTransition(AnimatorState from, AnimatorState to, AnimatorConditionMode mode, float threshold)
+        {
+            AnimatorStateTransition transition = from.AddTransition(to);
+            transition.hasExitTime = false;
+            transition.duration = 0.12f;
+            transition.AddCondition(mode, threshold, "Speed");
         }
 
         private static void EnsureFolders()
